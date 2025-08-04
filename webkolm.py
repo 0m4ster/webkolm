@@ -26,6 +26,7 @@ CORS(app)
 KOLMEYA_API_KEY = os.getenv('KOLMEYA_API_KEY', 'sua_api_key_aqui')
 KOLMEYA_API_URL = os.getenv('KOLMEYA_API_URL', 'https://api.kolmeya.com.br')
 WEBHOOK_BASE_URL = os.getenv('WEBHOOK_BASE_URL', 'https://seudominio.com')
+DESTINO_URL = os.getenv('DESTINO_URL', 'https://google.com')
 
 # Configuração para Render
 import os
@@ -91,6 +92,15 @@ def enviar_sms_kolmeya(telefone, mensagem):
     Retorna: (sucesso, resposta)
     """
     try:
+        # Verificar se a API key está configurada
+        if KOLMEYA_API_KEY == 'sua_api_key_aqui':
+            logger.warning("API key do Kolmeya não configurada - modo de teste")
+            return True, {
+                'status': 'teste',
+                'mensagem': 'SMS simulado (modo de teste)',
+                'telefone': telefone
+            }
+        
         headers = {
             'Authorization': f'Bearer {KOLMEYA_API_KEY}',
             'Content-Type': 'application/json'
@@ -100,6 +110,9 @@ def enviar_sms_kolmeya(telefone, mensagem):
             'telefone': telefone,
             'mensagem': mensagem
         }
+        
+        # Log da tentativa
+        logger.info(f"Tentando enviar SMS para {telefone} via {KOLMEYA_API_URL}")
         
         response = requests.post(
             f"{KOLMEYA_API_URL}/sms/enviar",
@@ -115,6 +128,12 @@ def enviar_sms_kolmeya(telefone, mensagem):
             logger.error(f"Erro ao enviar SMS: {response.status_code} - {response.text}")
             return False, response.text
             
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Erro de conexão com API Kolmeya: {str(e)}")
+        return False, f"Erro de conexão: {str(e)}"
+    except requests.exceptions.Timeout as e:
+        logger.error(f"Timeout na API Kolmeya: {str(e)}")
+        return False, f"Timeout: {str(e)}"
     except Exception as e:
         logger.error(f"Exceção ao enviar SMS: {str(e)}")
         return False, str(e)
@@ -224,8 +243,8 @@ def rastrear_clique():
         
         logger.info(f"Clique registrado - Cliente: {nome} ({cpf}) - Link ID: {link_id}")
         
-        # Redirecionar para a página de destino (substitua pela sua URL)
-        return redirect("https://sua-pagina-de-destino.com")
+        # Redirecionar para a página de destino configurável
+        return redirect(DESTINO_URL)
         
     except Exception as e:
         logger.error(f"Erro no endpoint clique: {str(e)}")
@@ -414,8 +433,83 @@ def home():
             'GET /clique?id=...': 'Rastrear cliques',
             'POST /webhook-kolmeya': 'Receber webhooks do Kolmeya',
             'GET /dashboard': 'Dashboard de estatísticas'
+        },
+        'configuracoes': {
+            'api_url': KOLMEYA_API_URL,
+            'webhook_url': WEBHOOK_BASE_URL,
+            'destino_url': DESTINO_URL,
+            'api_key_configurada': KOLMEYA_API_KEY != 'sua_api_key_aqui'
         }
     })
+
+@app.route('/testar-api')
+def testar_api():
+    """Testa a conectividade com a API do Kolmeya"""
+    try:
+        import requests
+        
+        # Teste básico de conectividade
+        response = requests.get(KOLMEYA_API_URL, timeout=10)
+        
+        return jsonify({
+            'status': 'sucesso',
+            'api_url': KOLMEYA_API_URL,
+            'status_code': response.status_code,
+            'conectividade': 'OK'
+        })
+        
+    except requests.exceptions.ConnectionError as e:
+        return jsonify({
+            'status': 'erro',
+            'api_url': KOLMEYA_API_URL,
+            'erro': 'Erro de conexão',
+            'detalhes': str(e),
+            'sugestao': 'Verifique se a URL da API está correta'
+        }), 500
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'erro',
+            'api_url': KOLMEYA_API_URL,
+            'erro': str(e)
+        }), 500
+
+@app.route('/cliques')
+def listar_cliques():
+    """Lista todos os cliques registrados"""
+    try:
+        conn = sqlite3.connect('kolmeya_webhook.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT c.nome, c.cpf, c.telefone, cl.data_clique, cl.ip_address, cl.user_agent
+            FROM cliques cl
+            JOIN clientes c ON cl.link_id = c.link_id
+            ORDER BY cl.data_clique DESC
+        ''')
+        
+        cliques = cursor.fetchall()
+        conn.close()
+        
+        return jsonify({
+            'status': 'sucesso',
+            'total_cliques': len(cliques),
+            'cliques': [
+                {
+                    'nome': clique[0],
+                    'cpf': clique[1],
+                    'telefone': clique[2],
+                    'data_clique': clique[3],
+                    'ip': clique[4],
+                    'user_agent': clique[5]
+                }
+                for clique in cliques
+            ]
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao listar cliques: {str(e)}")
+        return jsonify({'erro': str(e)}), 500
 
 if __name__ == '__main__':
     # Inicializar banco de dados
