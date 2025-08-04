@@ -125,7 +125,11 @@ def enviar_sms():
     Endpoint para enviar SMS com link rastreável
     """
     try:
-        data = request.get_json()
+        # Aceitar tanto JSON quanto form data
+        if request.is_json:
+            data = request.get_json()
+        else:
+            data = request.form.to_dict()
         
         # Validação dos dados
         required_fields = ['telefone', 'nome', 'cpf', 'mensagem']
@@ -233,7 +237,11 @@ def receber_webhook():
     Endpoint para receber webhooks do Kolmeya
     """
     try:
-        data = request.get_json()
+        # Aceitar tanto JSON quanto form data
+        if request.is_json:
+            data = request.get_json()
+        else:
+            data = request.form.to_dict()
         
         # Salvar webhook no banco
         conn = sqlite3.connect('kolmeya_webhook.db')
@@ -345,6 +353,9 @@ def dashboard():
                         <input type="text" name="mensagem" placeholder="Mensagem" required style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; flex: 1;">
                         <button type="submit" class="btn">Enviar SMS</button>
                     </form>
+                    <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                        <strong>💡 Dica:</strong> Este formulário usa form data. Para usar JSON, envie uma requisição POST com Content-Type: application/json
+                    </div>
                 </div>
                 
                 <div class="card">
